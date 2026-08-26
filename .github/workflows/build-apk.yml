@@ -12,6 +12,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Extract uploaded zip (if present)
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" | head -n 1)
+          if [ -n "$ZIP_FILE" ]; then
+            echo "Found zip: $ZIP_FILE — extracting..."
+            unzip -o "$ZIP_FILE" -d extracted_project
+            # If the zip contains a single top-level folder, move its contents up
+            ENTRIES=$(ls extracted_project)
+            COUNT=$(echo "$ENTRIES" | wc -l)
+            if [ "$COUNT" -eq 1 ] && [ -d "extracted_project/$ENTRIES" ]; then
+              mv "extracted_project/$ENTRIES"/* extracted_project/
+              mv "extracted_project/$ENTRIES"/.[!.]* extracted_project/ 2>/dev/null || true
+              rmdir "extracted_project/$ENTRIES" 2>/dev/null || true
+            fi
+          else
+            echo "No zip found, assuming project is already unpacked at repo root."
+            mkdir -p extracted_project
+            shopt -s extglob dotglob
+            cp -r !(extracted_project) extracted_project/ 2>/dev/null || true
+          fi
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -24,10 +45,11 @@ jobs:
           gradle-version: 8.7
 
       - name: Build debug APK
+        working-directory: extracted_project
         run: gradle assembleDebug --no-daemon
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: cwrv-multiwick-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: extracted_project/app/build/outputs/apk/debug/app-debug.apk
